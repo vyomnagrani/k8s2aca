@@ -16,7 +16,7 @@ import sys
 SUPPORTED_GPU_SKUS = ["A100", "T4"]
 
 # ===================== Main Conversion Logic =====================
-def convert_k8s_to_aca(input_file, output_file):
+def convert_k8s_to_aca(input_file, output_file=None):
     # Main conversion function. Reads a Kubernetes manifest file, parses all relevant resources,
     # maps them to ACA equivalents, and writes both the ACA template and a migration report.
     with open(input_file, 'r') as f:
@@ -28,9 +28,9 @@ def convert_k8s_to_aca(input_file, output_file):
     services = []
     ingresses = []
     unsupported = []
-    migration_report = []
 
-    # Parse all resources in the manifest (if list)
+    # Gather all pod-spec resources (Deployment, ReplicaSet, Pod)
+    pod_resources = []
     if isinstance(manifest, list):
         for item in manifest:
             kind = item.get('kind')
@@ -42,116 +42,171 @@ def convert_k8s_to_aca(input_file, output_file):
                 services.append(item)
             elif kind == 'Ingress':
                 ingresses.append(item)
-            elif kind not in ['Deployment', 'ReplicaSet', 'Pod']:
-                unsupported.append(item)
-        # Find the Deployment (main workload)
-        deployment = next((i for i in manifest if i.get('kind') == 'Deployment'), None)
-        if not deployment:
-            print("[Error] No Deployment found in manifest.")
-            sys.exit(1)
-        manifest = deployment
-
-    # Extract pod spec and containers
-    pod_spec = manifest.get('spec', {}).get('template', {}).get('spec', {})
-    containers = pod_spec.get('containers', [])
-    volumes = pod_spec.get('volumes', [])
-
-    aca_containers = []
-    for container in containers:
-        aca_container = {
-            "name": container.get('name'),
-            "image": container.get('image'),
-            "resources": {"cpu": 2.0, "memory": "8.0Gi"},
-        }
-        # GPU mapping (interactive if needed)
-        gpu_count = detect_gpu(container)
-        if gpu_count:
-            count, sku = map_gpu_to_aca(gpu_count)
-            if count and sku:
-                aca_container["resources"]["gpus"] = count
-                aca_container["resources"]["gpuSku"] = sku
+            elif kind in ['Deployment', 'ReplicaSet', 'Pod']:
+                pod_resources.append(item)
             else:
-                migration_report.append(f"GPU mapping skipped for container {container.get('name')}. Will run on CPU only.")
-        # Environment variables (from manifest, ConfigMap, Secret)
-        aca_container["env"] = map_env_vars(container, configmaps, secrets)
-        # Ports
-        aca_container["ports"] = map_ports(container)
-        # Probes (liveness/readiness)
-        probes = map_probes(container)
-        if probes:
-            aca_container["probes"] = probes
-        # Volume mounts (interactive for unsupported types)
-        if 'volumeMounts' in container:
-            aca_container["volumeMounts"] = map_volumes(volumes, container['volumeMounts'])
-        aca_containers.append(aca_container)
-
-    # Labels and annotations from the Deployment
-    labels = manifest.get('metadata', {}).get('labels', {})
-    annotations = manifest.get('metadata', {}).get('annotations', {})
-
-    # Map Service/Ingress to ACA ingress (basic mapping)
-    aca_ingress = None
-    if services:
-        svc = services[0]  # Only map the first service for now
-        svc_type = svc.get('spec', {}).get('type', 'ClusterIP')
-        ports = svc.get('spec', {}).get('ports', [])
-        if svc_type in ['LoadBalancer', 'NodePort']:
-            aca_ingress = {
-                "external": True,
-                "targetPort": ports[0]['targetPort'] if ports else 80,
-                "transport": "auto"
-            }
-            migration_report.append(f"Service '{svc['metadata']['name']}' mapped to ACA ingress (external).")
-        elif svc_type == 'ClusterIP':
-            aca_ingress = {
-                "external": False,
-                "targetPort": ports[0]['targetPort'] if ports else 80,
-                "transport": "auto"
-            }
-            migration_report.append(f"Service '{svc['metadata']['name']}' mapped to ACA ingress (internal).")
+                unsupported.append(item)
+    else:
+        kind = manifest.get('kind')
+        if kind in ['Deployment', 'ReplicaSet', 'Pod']:
+            pod_resources.append(manifest)
+        elif kind == 'ConfigMap':
+            configmaps[manifest['metadata']['name']] = manifest.get('data', {})
+        elif kind == 'Secret':
+            secrets[manifest['metadata']['name']] = manifest.get('data', {})
+        elif kind == 'Service':
+            services.append(manifest)
+        elif kind == 'Ingress':
+            ingresses.append(manifest)
         else:
-            migration_report.append(f"Service type '{svc_type}' for '{svc['metadata']['name']}' not directly supported. Manual review needed.")
+            unsupported.append(manifest)
 
-    if ingresses:
-        ing = ingresses[0]
-        rules = ing.get('spec', {}).get('rules', [])
-        if aca_ingress:
-            aca_ingress['customDomains'] = [r['host'] for r in rules if 'host' in r]
-            migration_report.append(f"Ingress '{ing['metadata']['name']}' custom domains mapped to ACA ingress.")
+    if not pod_resources:
+        print("[Error] No pod-spec resources (Deployment, ReplicaSet, Pod) found in manifest.")
+        sys.exit(1)
+
+    for pod_resource in pod_resources:
+        migration_report = []
+        # Extract pod spec and containers
+        if pod_resource.get('kind') in ['Deployment', 'ReplicaSet']:
+            pod_spec = pod_resource.get('spec', {}).get('template', {}).get('spec', {})
         else:
-            migration_report.append(f"Ingress '{ing['metadata']['name']}' found, but no Service mapped. Manual review needed.")
+            pod_spec = pod_resource.get('spec', {})
+        containers = pod_spec.get('containers', [])
+        volumes = pod_spec.get('volumes', [])
 
-    # Report unsupported constructs
-    for item in unsupported:
-        kind = item.get('kind', 'Unknown')
-        name = item.get('metadata', {}).get('name', 'unnamed')
-        migration_report.append(f"[Unsupported] {kind} '{name}' is not supported in ACA. Manual migration required.")
+        aca_containers = []
+        dedicated_profile_needed = False
+        for container in containers:
+            # Dynamically map K8s resource requests/limits to ACA cpu/memory
+            resources = container.get('resources', {})
+            limits = resources.get('limits', {})
+            requests = resources.get('requests', {})
+            # Default values
+            cpu = 2.0
+            memory = "8.0Gi"
+            # Prefer limits, fallback to requests, fallback to default
+            if 'cpu' in limits:
+                try:
+                    cpu = float(str(limits['cpu']).replace('m',''))/1000 if 'm' in str(limits['cpu']) else float(limits['cpu'])
+                except Exception:
+                    migration_report.append(f"[Warning] Could not parse CPU limit for container {container.get('name')}. Using default 2.0.")
+            elif 'cpu' in requests:
+                try:
+                    cpu = float(str(requests['cpu']).replace('m',''))/1000 if 'm' in str(requests['cpu']) else float(requests['cpu'])
+                except Exception:
+                    migration_report.append(f"[Warning] Could not parse CPU request for container {container.get('name')}. Using default 2.0.")
+            if 'memory' in limits:
+                memory = str(limits['memory'])
+            elif 'memory' in requests:
+                memory = str(requests['memory'])
+            # ACA expects memory in Gi format (e.g., "8.0Gi")
+            if memory.endswith('Mi'):
+                try:
+                    mem_gi = round(float(memory.replace('Mi',''))/1024, 1)
+                    memory = f"{mem_gi}Gi"
+                except Exception:
+                    migration_report.append(f"[Warning] Could not parse memory value for container {container.get('name')}. Using default 8.0Gi.")
+                    memory = "8.0Gi"
+            elif memory.endswith('Gi'):
+                try:
+                    mem_gi = float(memory.replace('Gi',''))
+                except Exception:
+                    mem_gi = 8.0
+            else:
+                migration_report.append(f"[Warning] Memory value '{memory}' for container {container.get('name')}' not in Mi/Gi. Using default 8.0Gi.")
+                mem_gi = 8.0
+                memory = "8.0Gi"
+            if mem_gi > 8.0:
+                dedicated_profile_needed = True
+                migration_report.append(f"[Info] Container '{container.get('name')}' requests >8Gi memory. Will assign Dedicated Workload Profile in ACA.")
+            aca_container = {
+                "name": container.get('name'),
+                "image": container.get('image'),
+                "resources": {"cpu": cpu, "memory": memory},
+            }
+            gpu_count = detect_gpu(container)
+            if gpu_count:
+                count, sku = map_gpu_to_aca(gpu_count)
+                if count and sku:
+                    aca_container["resources"]["gpus"] = count
+                    aca_container["resources"]["gpuSku"] = sku
+                else:
+                    migration_report.append(f"GPU mapping skipped for container {container.get('name')}. Will run on CPU only.")
+            aca_container["env"] = map_env_vars(container, configmaps, secrets)
+            aca_container["ports"] = map_ports(container)
+            probes = map_probes(container)
+            if probes:
+                aca_container["probes"] = probes
+            if 'volumeMounts' in container:
+                aca_container["volumeMounts"] = map_volumes(volumes, container['volumeMounts'])
+            aca_containers.append(aca_container)
 
-    # Compose the ACA template
-    aca_template = {
-        "type": "Microsoft.App/containerApps",
-        "properties": {
-            "template": {
-                "containers": aca_containers
-            },
-            "labels": labels,
-            "annotations": annotations
+        labels = pod_resource.get('metadata', {}).get('labels', {})
+        annotations = pod_resource.get('metadata', {}).get('annotations', {})
+
+        aca_ingress = None
+        if services:
+            svc = services[0]
+            svc_type = svc.get('spec', {}).get('type', 'ClusterIP')
+            ports = svc.get('spec', {}).get('ports', [])
+            if svc_type in ['LoadBalancer', 'NodePort']:
+                aca_ingress = {
+                    "external": True,
+                    "targetPort": ports[0]['targetPort'] if ports else 80,
+                    "transport": "auto"
+                }
+                migration_report.append(f"Service '{svc['metadata']['name']}' mapped to ACA ingress (external).")
+            elif svc_type == 'ClusterIP':
+                aca_ingress = {
+                    "external": False,
+                    "targetPort": ports[0]['targetPort'] if ports else 80,
+                    "transport": "auto"
+                }
+                migration_report.append(f"Service '{svc['metadata']['name']}' mapped to ACA ingress (internal).")
+            else:
+                migration_report.append(f"Service type '{svc_type}' for '{svc['metadata']['name']}' not directly supported. Manual review needed.")
+
+        if ingresses:
+            ing = ingresses[0]
+            rules = ing.get('spec', {}).get('rules', [])
+            if aca_ingress:
+                aca_ingress['customDomains'] = [r['host'] for r in rules if 'host' in r]
+                migration_report.append(f"Ingress '{ing['metadata']['name']}' custom domains mapped to ACA ingress.")
+            else:
+                migration_report.append(f"Ingress '{ing['metadata']['name']}' found, but no Service mapped. Manual review needed.")
+
+        for item in unsupported:
+            kind = item.get('kind', 'Unknown')
+            name = item.get('metadata', {}).get('name', 'unnamed')
+            migration_report.append(f"[Unsupported] {kind} '{name}' is not supported in ACA. Manual migration required.")
+
+        aca_template = {
+            "type": "Microsoft.App/containerApps",
+            "properties": {
+                "template": {
+                    "containers": aca_containers
+                },
+                "labels": labels,
+                "annotations": annotations
+            }
         }
-    }
-    if aca_ingress:
-        aca_template["properties"]["ingress"] = aca_ingress
+        if aca_ingress:
+            aca_template["properties"]["ingress"] = aca_ingress
+        if dedicated_profile_needed:
+            aca_template["properties"]["workloadProfileName"] = "Dedicated"
+            migration_report.append("[Info] 'Dedicated' workload profile assigned in ACA template for containers requiring >8GiB memory.")
 
-    # Write ACA template to file
-    with open(output_file, 'w') as f:
-        yaml.dump(aca_template, f)
-    print(f"[Success] ACA template written to {output_file}")
-
-    # Write migration report to file
-    report_file = output_file.replace('.yaml', '.migration.txt')
-    with open(report_file, 'w') as f:
-        for line in migration_report:
-            f.write(line + '\n')
-    print(f"[Info] Migration report written to {report_file}")
+        app_name = pod_resource.get('metadata', {}).get('name', 'aca-app')
+        out_file = f"{app_name}.aca.yaml"
+        report_file = f"{app_name}.aca.migration.txt"
+        with open(out_file, 'w') as f:
+            yaml.dump(aca_template, f)
+        print(f"[Success] ACA template written to {out_file}")
+        with open(report_file, 'w') as f:
+            for line in migration_report:
+                f.write(line + '\n')
+        print(f"[Info] Migration report written to {report_file}")
 
 # ===================== Helper Functions =====================
 
@@ -263,7 +318,7 @@ def map_probes(container):
 
 # ===================== Entry Point =====================
 if __name__ == "__main__":
-    if len(sys.argv) < 3:
-        print("Usage: python main.py <input-k8s-manifest.yaml> <output-aca-template.yaml>")
+    if len(sys.argv) < 2:
+        print("Usage: python main.py <input-k8s-manifest.yaml>")
         sys.exit(1)
-    convert_k8s_to_aca(sys.argv[1], sys.argv[2])
+    convert_k8s_to_aca(sys.argv[1])
