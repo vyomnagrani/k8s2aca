@@ -1,0 +1,18 @@
+properties:
+  annotations: {}
+  ingress:
+    external: true
+    targetPort: 80
+    transport: auto
+  labels: {}
+  template:
+    containers:
+    - env: []
+      image: mcr.microsoft.com/azuredocs/aci-helloworld:latest
+      name: hello-world
+      ports:
+      - port: 80
+      resources:
+        cpu: 0.5
+        memory: 1.0Gi
+type: Microsoft.App/containerApps
