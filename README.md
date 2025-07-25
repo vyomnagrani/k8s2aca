@@ -104,7 +104,7 @@ Once you have generated your ACA YAML template, you can deploy it to Azure Conta
 
 3. **Deploy the ACA template:**
    ```sh
-   az containerapp create --resource-group my-aca-rg --name my-aca-app --environment <aca-env-name> --file <output-aca-template.yaml>
+   az containerapp create --resource-group my-aca-rg --name my-aca-app --environment <aca-env-name> --yaml <output-aca-template.yaml>
    ```
    - Replace `<aca-env-name>` with your ACA environment name (create one if you don't have it: [docs](https://learn.microsoft.com/en-us/azure/container-apps/environment))
    - Replace `<output-aca-template.yaml>` with your generated file
