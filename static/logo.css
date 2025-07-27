@@ -1,0 +1,37 @@
+/* Azure Container Apps Logo Styles */
+.azure-container-logo {
+    display: inline-flex;
+    align-items: center;
+    font-size: 1.2rem;
+}
+
+.logo-icon {
+    width: 32px;
+    height: 32px;
+    margin-right: 8px;
+}
+
+.logo-icon-large {
+    width: 48px;
+    height: 48px;
+    margin-right: 12px;
+}
+
+.azure-logo-animation {
+    animation: azure-pulse 2s ease-in-out infinite alternate;
+}
+
+@keyframes azure-pulse {
+    0% { opacity: 0.8; }
+    100% { opacity: 1; }
+}
+
+/* Container stack animation */
+.container-stack {
+    animation: container-float 3s ease-in-out infinite;
+}
+
+@keyframes container-float {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-2px); }
+}

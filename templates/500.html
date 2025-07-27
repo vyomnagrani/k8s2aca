@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Server Error - k8s2aca{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-6 mx-auto text-center">
+        <div class="py-5">
+            <i class="fas fa-exclamation-triangle fa-5x mb-4" style="color: var(--azure-danger);"></i>
+            <h1 class="display-4">500</h1>
+            <h2>Server Error</h2>
+            <p class="lead text-muted">
+                Something went wrong on our end. Please try again later.
+            </p>
+            <a href="{{ url_for('index') }}" class="btn btn-azure">
+                <i class="fas fa-home me-2"></i>
+                Go Home
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

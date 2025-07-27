@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+
+{% block title %}Conversion Results - k8s2aca{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <h2 class="d-flex align-items-center">
+                    <!-- Official Azure Container Apps Logo - Small Version -->
+                    <img src="{{ url_for('static', filename='azure-container-apps-logo.png') }}" 
+                         alt="Azure Container Apps" 
+                         class="logo-icon me-2"
+                         style="width: 32px; height: 32px; object-fit: contain;"
+                         onerror="this.src='https://qreat.tech/wp-content/uploads/2022/01/azure-container-apps-1024x729.png'; this.onerror=function(){this.style.display='none'; this.nextElementSibling.style.display='inline-block';}">
+                    <!-- Fallback icon if image fails to load -->
+                    <i class="fas fa-check-circle text-azure-success me-2" style="display: none;"></i>
+                    <span class="text-azure-success">Conversion Complete</span>
+                </h2>
+                <p class="text-muted mb-0">Successfully converted: <strong>{{ original_filename }}</strong></p>
+            </div>
+            <a href="{{ url_for('index') }}" class="btn btn-outline-primary">
+                <i class="fas fa-arrow-left me-2"></i>
+                Convert Another File
+            </a>
+        </div>
+
+        <!-- Download Buttons -->
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="card h-100">
+                    <div class="card-body text-center">
+                        <i class="fas fa-file-code fa-3x text-azure mb-3"></i>
+                        <h5>Azure Container Apps Template</h5>
+                        <p class="text-muted">Ready-to-use ACA deployment template</p>
+                        <a href="{{ url_for('download_file', filename=output_file) }}" class="btn btn-azure">
+                            <i class="fas fa-download me-2"></i>
+                            Download ACA Template
+                        </a>
+                    </div>
+                </div>
+            </div>
+            {% if report_file %}
+            <div class="col-md-6">
+                <div class="card h-100">
+                    <div class="card-body text-center">
+                        <i class="fas fa-file-alt fa-3x text-azure-warning mb-3"></i>
+                        <h5>Migration Report</h5>
+                        <p class="text-muted">Important notes and manual steps</p>
+                        <a href="{{ url_for('download_file', filename=report_file) }}" class="btn" style="background-color: var(--azure-warning); color: white;">
+                            <i class="fas fa-download me-2"></i>
+                            Download Report
+                        </a>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="row">
+            <!-- ACA Template Preview -->
+            <div class="col-lg-8">
+                <div class="card">
+                    <div class="card-header bg-azure text-white d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            <i class="fas fa-code me-2"></i>
+                            Azure Container Apps Template
+                        </h5>
+                        <button class="btn btn-sm btn-light" onclick="copyToClipboard('aca-template')">
+                            <i class="fas fa-copy me-1"></i>Copy
+                        </button>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="code-container">
+                            <pre id="aca-template"><code>{{ aca_template }}</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Migration Report -->
+            <div class="col-lg-4">
+                {% if migration_report.strip() %}
+                <div class="card">
+                    <div class="card-header text-dark" style="background-color: var(--azure-warning);">
+                        <h5 class="mb-0">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            Migration Notes
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="migration-report">
+                            <pre style="white-space: pre-wrap; font-size: 0.9rem;">{{ migration_report }}</pre>
+                        </div>
+                    </div>
+                </div>
+                {% else %}
+                <div class="card">
+                    <div class="card-header text-white" style="background-color: var(--azure-success);">
+                        <h5 class="mb-0">
+                            <i class="fas fa-check-circle me-2"></i>
+                            Clean Conversion
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-azure-success mb-0">
+                            <i class="fas fa-thumbs-up me-2"></i>
+                            No manual migration steps required! Your Kubernetes manifest was successfully converted to Azure Container Apps format.
+                        </p>
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Deployment Instructions -->
+                <div class="card mt-3">
+                    <div class="card-header text-white" style="background-color: var(--azure-accent);">
+                        <h5 class="mb-0">
+                            <i class="fas fa-rocket me-2"></i>
+                            Next Steps
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <ol class="list-unstyled">
+                            <li class="mb-2">
+                                <i class="fas fa-check-circle text-azure-success me-2"></i>
+                                <strong>Download</strong> the ACA template
+                            </li>
+                            <li class="mb-2">
+                                <i class="fas fa-cogs text-azure me-2"></i>
+                                <strong>Review</strong> resource settings
+                            </li>
+                            <li class="mb-2">
+                                <i class="fas fa-cloud text-azure me-2"></i>
+                                <strong>Deploy</strong> using Azure CLI or Portal
+                            </li>
+                        </ol>
+                        
+                        <div class="mt-3">
+                            <h6 class="text-muted">Deploy with Azure CLI:</h6>
+                            <div class="p-2 rounded" style="background-color: var(--azure-dark-gray); color: white;">
+                                <code style="color: #fff;">az containerapp create --yaml {{ output_file }}</code>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Toast for copy confirmation -->
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+    <div id="copyToast" class="toast" role="alert">
+        <div class="toast-header">
+            <i class="fas fa-check-circle text-success me-2"></i>
+            <strong class="me-auto">Copied!</strong>
+            <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+        </div>
+        <div class="toast-body">
+            Template copied to clipboard
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function copyToClipboard(elementId) {
+    const element = document.getElementById(elementId);
+    const text = element.textContent;
+    
+    navigator.clipboard.writeText(text).then(function() {
+        // Show toast notification
+        const toast = new bootstrap.Toast(document.getElementById('copyToast'));
+        toast.show();
+    }).catch(function(err) {
+        console.error('Failed to copy: ', err);
+        // Fallback for older browsers
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        
+        const toast = new bootstrap.Toast(document.getElementById('copyToast'));
+        toast.show();
+    });
+}
+</script>
+{% endblock %}
