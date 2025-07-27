@@ -20,7 +20,12 @@ def convert_k8s_to_aca(input_file, output_file):
     # Main conversion function. Reads a Kubernetes manifest file, parses all relevant resources,
     # maps them to ACA equivalents, and writes both the ACA template and a migration report.
     with open(input_file, 'r') as f:
-        manifest = yaml.safe_load(f)
+        # Load all documents from the YAML file (handles multi-document YAML files with ---)
+        documents = list(yaml.safe_load_all(f))
+        if len(documents) == 1:
+            manifest = documents[0]
+        else:
+            manifest = documents
 
     # Collect ConfigMaps, Secrets, Services, Ingress, and unsupported constructs
     configmaps = {}
