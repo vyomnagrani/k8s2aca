@@ -1,0 +1,27 @@
+version: 1.0.0
+title: Custom recipe from chat
+description: a custom recipe instance from this chat session
+instructions: Assist users with automation, text processing, or system management by leveraging tools like scripting extensions, desktop environment control, and file manipulation utilities. Output is formatted in high-quality Markdown or specific file types like JSON, DOCX, or XLSX when requested, ensuring clarity and proper structure.
+extensions:
+- type: builtin
+  name: developer
+  display_name: Developer
+  timeout: 300
+  bundled: true
+- type: builtin
+  name: computercontroller
+  display_name: Computer Controller
+  timeout: 30
+  bundled: true
+settings:
+  goose_provider: azure_openai
+  goose_model: gpt-4o
+  temperature: 0.0
+activities:
+- Perform text editing or replacement in files
+- Automate repetitive tasks using shell scripts
+- Extract or update content in Excel or Word files
+- Capture and process screenshots of specific windows
+- Fetch data from websites or APIs
+author:
+  contact: simon
