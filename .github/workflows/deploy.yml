@@ -1,0 +1,43 @@
+name: Deploy to Azure Container Apps
+
+on:
+  push:
+    branches: [ main, jefmarti-ui ]
+  workflow_dispatch:
+
+env:
+  AZURE_CONTAINER_APP_NAME: k8s2aca-app
+  AZURE_RESOURCE_GROUP: k8s2aca-rg
+  AZURE_LOCATION: eastus
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+        
+    - name: Deploy to Container Apps
+      run: |
+        az containerapp up \
+          --name ${{ env.AZURE_CONTAINER_APP_NAME }} \
+          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+          --location ${{ env.AZURE_LOCATION }} \
+          --source . \
+          --target-port 5000 \
+          --ingress external \
+          --env-vars FLASK_ENV=production
+          
+    - name: Get App URL
+      run: |
+        APP_URL=$(az containerapp show \
+          --name ${{ env.AZURE_CONTAINER_APP_NAME }} \
+          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+          --query "properties.configuration.ingress.fqdn" -o tsv)
+        echo "🌐 Application deployed at: https://$APP_URL"

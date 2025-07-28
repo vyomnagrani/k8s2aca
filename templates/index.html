@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8 mx-auto">
+        <div class="text-center mb-5">
+            <h1 class="display-4 d-flex align-items-center justify-content-center">
+                <!-- Official Azure Container Apps Logo - Large Version -->
+                <img src="{{ url_for('static', filename='azure-container-apps-logo.png') }}" 
+                     alt="Azure Container Apps" 
+                     class="logo-icon-large me-3"
+                     style="width: 64px; height: 64px; object-fit: contain;"
+                     onerror="this.src='https://qreat.tech/wp-content/uploads/2022/01/azure-container-apps-1024x729.png'; this.onerror=function(){this.style.display='none'; this.nextElementSibling.style.display='inline-block';}">
+                <!-- Fallback icon if image fails to load -->
+                <i class="fas fa-exchange-alt text-azure me-3" style="display: none; font-size: 3rem;"></i>
+                k8s2aca Converter
+            </h1>
+            <p class="lead text-muted">
+                Transform your Kubernetes manifests into Azure Container Apps deployment templates
+            </p>
+        </div>
+
+        <!-- Features Section -->
+        <div class="row mb-5">
+            <div class="col-md-4 text-center mb-3">
+                <i class="fas fa-upload feature-icon mb-2"></i>
+                <h5>Easy Upload</h5>
+                <p class="text-muted">Drag and drop or browse to upload your Kubernetes YAML files</p>
+            </div>
+            <div class="col-md-4 text-center mb-3">
+                <i class="fas fa-magic feature-icon mb-2"></i>
+                <h5>Auto Convert</h5>
+                <p class="text-muted">Automatically convert Deployments, Services, and Ingress resources</p>
+            </div>
+            <div class="col-md-4 text-center mb-3">
+                <i class="fas fa-file-download feature-icon mb-2"></i>
+                <h5>Download Results</h5>
+                <p class="text-muted">Get your ACA template and migration report instantly</p>
+            </div>
+        </div>
+
+        <!-- Upload Form -->
+        <div class="card shadow">
+            <div class="card-header bg-azure text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-cloud-upload-alt me-2"></i>
+                    Upload Kubernetes Manifest
+                </h5>
+            </div>
+            <div class="card-body">
+                <form action="{{ url_for('upload_file') }}" method="post" enctype="multipart/form-data" id="uploadForm">
+                    <div class="upload-area" id="uploadArea">
+                        <i class="fas fa-cloud-upload-alt fa-3x text-muted mb-3"></i>
+                        <h5>Drop your Kubernetes YAML file here</h5>
+                        <p class="text-muted">or click to browse</p>
+                        <input type="file" name="k8s_file" id="k8s_file" accept=".yaml,.yml" class="d-none" required>
+                        <small class="text-muted">Supported formats: .yaml, .yml (max 16MB)</small>
+                    </div>
+                    
+                    <div id="fileInfo" class="mt-3 d-none">
+                        <div class="alert alert-info">
+                            <i class="fas fa-file-alt me-2"></i>
+                            Selected file: <span id="fileName"></span>
+                        </div>
+                    </div>
+                    
+                    <div class="text-center mt-4">
+                        <button type="submit" class="btn btn-azure btn-lg" id="convertBtn" disabled>
+                            <i class="fas fa-exchange-alt me-2"></i>
+                            Convert to Azure Container Apps
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Info Section -->
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-info-circle me-2"></i>
+                    What gets converted?
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6 class="text-azure-success">
+                            <i class="fas fa-check me-2"></i>Supported Resources
+                        </h6>
+                        <ul class="list-unstyled">
+                            <li><i class="fas fa-cube me-2 text-azure"></i>Deployments</li>
+                            <li><i class="fas fa-network-wired me-2 text-azure"></i>Services</li>
+                            <li><i class="fas fa-route me-2 text-azure"></i>Ingress</li>
+                            <li><i class="fas fa-cog me-2 text-azure"></i>ConfigMaps</li>
+                            <li><i class="fas fa-key me-2 text-azure"></i>Secrets</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="text-azure">
+                            <i class="fas fa-magic me-2"></i>Auto-Mapped Features
+                        </h6>
+                        <ul class="list-unstyled">
+                            <li><i class="fas fa-memory me-2 text-azure"></i>Resource limits & requests</li>
+                            <li><i class="fas fa-heartbeat me-2 text-azure"></i>Health probes</li>
+                            <li><i class="fas fa-plug me-2 text-azure"></i>Port configurations</li>
+                            <li><i class="fas fa-tags me-2 text-azure"></i>Labels & annotations</li>
+                            <li><i class="fas fa-hdd me-2 text-azure"></i>Volume mounts</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const uploadArea = document.getElementById('uploadArea');
+    const fileInput = document.getElementById('k8s_file');
+    const fileInfo = document.getElementById('fileInfo');
+    const fileName = document.getElementById('fileName');
+    const convertBtn = document.getElementById('convertBtn');
+    const uploadForm = document.getElementById('uploadForm');
+
+    // Click to upload
+    uploadArea.addEventListener('click', () => fileInput.click());
+
+    // File selection
+    fileInput.addEventListener('change', function(e) {
+        handleFile(e.target.files[0]);
+    });
+
+    // Drag and drop
+    uploadArea.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        uploadArea.classList.add('dragover');
+    });
+
+    uploadArea.addEventListener('dragleave', function(e) {
+        e.preventDefault();
+        uploadArea.classList.remove('dragover');
+    });
+
+    uploadArea.addEventListener('drop', function(e) {
+        e.preventDefault();
+        uploadArea.classList.remove('dragover');
+        
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+            fileInput.files = files;
+            handleFile(files[0]);
+        }
+    });
+
+    function handleFile(file) {
+        if (file) {
+            // Validate file type
+            const allowedTypes = ['.yaml', '.yml'];
+            const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
+            
+            if (!allowedTypes.includes(fileExtension)) {
+                alert('Please select a YAML file (.yaml or .yml)');
+                return;
+            }
+
+            // Validate file size (16MB)
+            if (file.size > 16 * 1024 * 1024) {
+                alert('File size must be less than 16MB');
+                return;
+            }
+
+            fileName.textContent = file.name;
+            fileInfo.classList.remove('d-none');
+            convertBtn.disabled = false;
+        }
+    }
+
+    // Form submission
+    uploadForm.addEventListener('submit', function(e) {
+        convertBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Converting...';
+        convertBtn.disabled = true;
+    });
+});
+</script>
+{% endblock %}
