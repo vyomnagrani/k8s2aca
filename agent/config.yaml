@@ -1,0 +1,21 @@
+AZURE_OPENAI_DEPLOYMENT_NAME: gpt-4
+GOOSE_PROVIDER: azure_openai
+extensions:
+  computercontroller:
+    bundled: true
+    display_name: Computer Controller
+    enabled: true
+    name: computercontroller
+    timeout: 30
+    type: builtin
+  developer:
+    bundled: true
+    display_name: Developer
+    enabled: true
+    name: developer
+    timeout: 900
+    type: builtin
+AZURE_OPENAI_ENDPOINT: https://<YOUR_DEPLOYMENT_NAME>.openai.azure.com/
+GOOSE_MODEL: gpt-4o
+AZURE_OPENAI_API_VERSION: 2024-12-01-preview
+AZURE_OPENAI_API_KEY: <YOUR_API_KEY> 

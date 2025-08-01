@@ -1,0 +1,18 @@
+# Recipe: AKS List and Namespace Dump
+# Description: This recipe lists AKS clusters, allows user selection, connects to the cluster, and dumps namespaces.
+
+steps:
+  - name: List AKS Clusters
+    command: az aks list --output table
+
+  - name: Select AKS Cluster
+    prompt: >
+      Please select a cluster from the list above by specifying its name and location (e.g., "myAKSCluster in eastus").
+
+  - name: Connect to AKS Cluster and List Namespaces
+    script: >
+      ~/.config/goose/aks_namespace_exporter.sh {{ cluster_name }} {{ cluster_location }}
+
+  - name: Show Exported Namespace Contents
+    script: >
+      tree aks_namespace_exports/
