@@ -1,0 +1,28 @@
+type: Microsoft.App/containerApps
+name: default-1753662683533
+location: eastus
+properties:
+  managedEnvironmentId: /subscriptions/30501c6c-81f6-41ac-a388-d29cf43a020d/resourceGroups/myAKSCluster_default-1753662683533/providers/Microsoft.App/managedEnvironments/default-1753662683533
+  configuration:
+    ingress:
+      external: true
+      targetPort: 80
+      transport: auto
+      allowInsecure: false
+    registries: null
+  template:
+    containers:
+    - name: nginx
+      image: docker.io/nginx
+      resources:
+        cpu: 0.5
+        memory: 1Gi
+    scale:
+      minReplicas: 1
+      maxReplicas: 5
+      rules:
+      - name: http-scaler
+        custom:
+          type: http
+          metadata:
+            concurrentRequests: "50"

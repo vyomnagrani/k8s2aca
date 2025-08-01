@@ -1,0 +1,18 @@
+name: whoami
+location: eastus
+type: Microsoft.Web/containerApps
+properties:
+  managedEnvironmentId: "/subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.App/managedEnvironments/web-demo"
+  configuration:
+    ingress:
+      external: true
+      targetPort: 80
+      transport: auto
+    activeRevisionsMode: Single
+  template:
+    containers:
+      - name: whoami
+        image: "whoami"
+        resources:
+          cpu: 1
+          memory: 2Gi

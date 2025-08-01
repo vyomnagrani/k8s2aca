@@ -1,0 +1,16 @@
+name: http-echo
+location: eastus
+resourceGroup: k3d-core-infra-eastus
+properties:
+  environmentId: "/subscriptions/30501c6c-81f6-41ac-a388-d29cf43a020d/resourceGroups/k3d-core-infra-eastus/providers/Microsoft.App/managedEnvironments/core-infra-eastus"
+  configuration:
+    ingress:
+      external: true
+      targetPort: 80
+  template:
+    containers:
+    - image: http-echo-image:latest
+      name: http-echo
+      resources:
+        cpu: 1.0
+        memory: 2.0Gi
