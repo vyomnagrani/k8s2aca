@@ -3,16 +3,16 @@ k8s2aca: Kubernetes to Azure Container Apps Converter
 """
 
 # ===================== Imports =====================
+import yaml
 import os
 import sys
-import yaml
 
-# ===================== Helper Functions =====================
-
+# ===================== Constants =====================
+# List of supported GPU SKUs for ACA
 SUPPORTED_GPU_SKUS = ["A100", "T4"]
 
 # ===================== Main Conversion Logic =====================
-def convert_k8s_to_aca(input_file, output_file=None):
+def convert_k8s_to_aca(input_file, output_file):
     # Main conversion function. Reads a Kubernetes manifest file, parses all relevant resources,
     # maps them to ACA equivalents, and writes both the ACA template and a migration report.
     with open(input_file, 'r') as f:
@@ -22,6 +22,154 @@ def convert_k8s_to_aca(input_file, output_file=None):
             manifest = documents[0]
         else:
             manifest = documents
+
+    # Collect ConfigMaps, Secrets, Services, Ingress, and unsupported constructs
+    configmaps = {}
+    secrets = {}
+    services = []
+    ingresses = []
+    unsupported = []
+    migration_report = []
+
+    # Parse all resources in the manifest (if list)
+    if isinstance(manifest, list):
+        for item in manifest:
+            kind = item.get('kind')
+            if kind == 'ConfigMap':
+                configmaps[item['metadata']['name']] = item.get('data', {})
+            elif kind == 'Secret':
+                secrets[item['metadata']['name']] = item.get('data', {})
+            elif kind == 'Service':
+                services.append(item)
+            elif kind == 'Ingress':
+                ingresses.append(item)
+            elif kind not in ['Deployment', 'ReplicaSet', 'Pod']:
+                unsupported.append(item)
+        # Find the Deployment (main workload)
+        deployment = next((i for i in manifest if i.get('kind') == 'Deployment'), None)
+        if not deployment:
+            print("[Error] No Deployment found in manifest.")
+            sys.exit(1)
+        manifest = deployment
+
+    # Extract pod spec and containers
+    pod_spec = manifest.get('spec', {}).get('template', {}).get('spec', {})
+    containers = pod_spec.get('containers', [])
+    volumes = pod_spec.get('volumes', [])
+
+    aca_containers = []
+    for container in containers:
+        aca_container = {
+            "name": container.get('name'),
+            "image": container.get('image'),
+            "resources": {"cpu": 2.0, "memory": "8.0Gi"},
+        }
+        # GPU mapping (interactive if needed)
+        gpu_count = detect_gpu(container)
+        if gpu_count:
+            count, sku = map_gpu_to_aca(gpu_count)
+            if count and sku:
+                aca_container["resources"]["gpus"] = count
+                aca_container["resources"]["gpuSku"] = sku
+            else:
+                migration_report.append(f"GPU mapping skipped for container {container.get('name')}. Will run on CPU only.")
+        # Environment variables (from manifest, ConfigMap, Secret)
+        aca_container["env"] = map_env_vars(container, configmaps, secrets)
+        # Ports
+        aca_container["ports"] = map_ports(container)
+        # Probes (liveness/readiness)
+        probes = map_probes(container)
+        if probes:
+            aca_container["probes"] = probes
+        # Volume mounts (interactive for unsupported types)
+        if 'volumeMounts' in container:
+            aca_container["volumeMounts"] = map_volumes(volumes, container['volumeMounts'])
+        aca_containers.append(aca_container)
+
+    # Labels and annotations from the Deployment
+    labels = manifest.get('metadata', {}).get('labels', {})
+    annotations = manifest.get('metadata', {}).get('annotations', {})
+
+    # Map Service/Ingress to ACA ingress (basic mapping)
+    aca_ingress = None
+    if services:
+        svc = services[0]  # Only map the first service for now
+        svc_type = svc.get('spec', {}).get('type', 'ClusterIP')
+        ports = svc.get('spec', {}).get('ports', [])
+        if svc_type in ['LoadBalancer', 'NodePort']:
+            aca_ingress = {
+                "external": True,
+                "targetPort": ports[0]['targetPort'] if ports else 80,
+                "transport": "auto"
+            }
+            migration_report.append(f"Service '{svc['metadata']['name']}' mapped to ACA ingress (external).")
+        elif svc_type == 'ClusterIP':
+            aca_ingress = {
+                "external": False,
+                "targetPort": ports[0]['targetPort'] if ports else 80,
+                "transport": "auto"
+            }
+            migration_report.append(f"Service '{svc['metadata']['name']}' mapped to ACA ingress (internal).")
+        else:
+            migration_report.append(f"Service type '{svc_type}' for '{svc['metadata']['name']}' not directly supported. Manual review needed.")
+
+    if ingresses:
+        ing = ingresses[0]
+        rules = ing.get('spec', {}).get('rules', [])
+        if aca_ingress:
+            aca_ingress['customDomains'] = [r['host'] for r in rules if 'host' in r]
+            migration_report.append(f"Ingress '{ing['metadata']['name']}' custom domains mapped to ACA ingress.")
+        else:
+            migration_report.append(f"Ingress '{ing['metadata']['name']}' found, but no Service mapped. Manual review needed.")
+
+    # Report unsupported constructs
+    for item in unsupported:
+        kind = item.get('kind', 'Unknown')
+        name = item.get('metadata', {}).get('name', 'unnamed')
+        migration_report.append(f"[Unsupported] {kind} '{name}' is not supported in ACA. Manual migration required.")
+
+    # Compose the ACA template
+    aca_template = {
+        "type": "Microsoft.App/containerApps",
+        "properties": {
+            "template": {
+                "containers": aca_containers
+            },
+            "labels": labels,
+            "annotations": annotations
+        }
+    }
+    if aca_ingress:
+        aca_template["properties"]["ingress"] = aca_ingress
+
+    # Write ACA template to file
+    with open(output_file, 'w') as f:
+        yaml.dump(aca_template, f)
+    print(f"[Success] ACA template written to {output_file}")
+
+    # Write migration report to file
+    report_file = output_file.replace('.yaml', '.migration.txt')
+    with open(report_file, 'w') as f:
+        for line in migration_report:
+            f.write(line + '\n')
+    print(f"[Info] Migration report written to {report_file}")
+
+# ===================== Helper Functions =====================
+
+SUPPORTED_GPU_SKUS = ["A100", "T4"]
+
+def prompt_choice(message, choices):
+    print(message)
+    for idx, choice in enumerate(choices, 1):
+        print(f"{idx}. {choice}")
+    while True:
+        try:
+            selection = int(input(f"Enter your choice [1-{len(choices)}]: "))
+            if 1 <= selection <= len(choices):
+                return choices[selection - 1]
+        except ValueError:
+            pass
+        print("Invalid input. Please try again.")
 
 def detect_gpu(container):
     resources = container.get('resources', {})
