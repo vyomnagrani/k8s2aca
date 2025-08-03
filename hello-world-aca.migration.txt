@@ -1,1 +1,0 @@
-Service 'hello-world-service' mapped to ACA ingress (external).

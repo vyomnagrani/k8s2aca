@@ -1,0 +1,40 @@
+version: 1.0.0
+title: An AKS to ACA Migration Agent
+description: An agent to help migrate applications from Azure Kubernetes Service (AKS) to Azure Container Apps (ACA). This agent will assist in listing and discovering ACA resources, guiding users through the migration process, and providing best practices for migrating applications from AKS to ACA.
+instructions: Assist users with the listing and discovery of ACA (Azure Container Apps) resources, and provide guidance on migrating applications from AKS (Azure Kubernetes Service) to ACA. This agent will help users understand the differences between AKS and ACA, and guide them through the migration process. It will also assist in identifying resources that can be migrated and provide best practices for the migration. The agent is designed to be used by developers and DevOps engineers familiar with Azure services. The agent will discover, list and then connect to the AKS cluster in the region {{ azure_region }} using kubectl commands and Azure CLI. It will then extract the kubernetes yaml and convert it to ACA environments and apps to be provisioned in Azure Container Apps
+prompt: |
+  You will help the user list their AKS clusters in {{ azure_region }}, connect to the selected cluster, extract the Kubernetes YAML, and convert it to a format suitable for Azure Container Apps. You will also provide the user with the necessary commands to provision the ACA resources. Use the tools given to you.
+extensions:
+- type: builtin
+  name: developer
+  display_name: Developer
+  timeout: 300
+  bundled: true
+- type: builtin
+  name: computercontroller
+  display_name: Computer Controller
+  timeout: 30
+  bundled: true
+- type: builtin
+  name: memory
+  display_name: Memory
+  timeout: 30
+  bundled: true
+settings:
+  goose_provider: azure_openai
+  goose_model: gpt-4o
+  temperature: 0.0
+activities:
+- Confirm the user is logged into the Azure CLI.
+- List the AKS clusters in the region and for the subscription already logged in.
+- Ask which cluster to connect to for the migration.
+- Use kubectl to extract the Kubernetes YAML from the selected AKS cluster namespace.
+- Convert the yaml to a format suitable for Azure Container Apps.
+- Display the ACA yaml and show the provisioning cli command to run.
+parameters:
+  - key: azure_region
+    input_type: string
+    description: The region for the migration.
+    requirement: user_prompt
+author:
+  contact: simon
